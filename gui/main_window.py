@@ -1,9 +1,5 @@
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton, QDialog, QApplication
 
-from gui.game_window import GameWindow
-from gui.main_menu import MainMenu
-from gui.select_size_dialog import SelectSizeDialog
-
 
 class MainWindow(QWidget):
     def __init__(self, stacked_widget):
