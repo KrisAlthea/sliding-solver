@@ -2,6 +2,7 @@ from PyQt5.QtWidgets import QWidget, QGridLayout, QPushButton, QMessageBox, QVBo
 import copy
 
 from game_logic import GameLogic
+from gui.customize_dialog import CustomizeGameDialog
 from gui.select_size_dialog import SelectSizeDialog
 
 
@@ -21,10 +22,24 @@ class GameWindow(QWidget):
 
         layout = QHBoxLayout()
 
+        # 左侧功能按钮
+        self.qvbox_layout_left = QVBoxLayout()
+        layout.addLayout(self.qvbox_layout_left)
+
         # 按钮：返回主菜单
         btn_back = QPushButton("Return Main")
         btn_back.clicked.connect(self.go_back)
-        layout.addWidget(btn_back)
+        self.qvbox_layout_left.addWidget(btn_back)
+
+        # 按钮: 设置棋盘大小
+        btn_set_size = QPushButton("Set Size")
+        btn_set_size.clicked.connect(self.set_size)
+        self.qvbox_layout_left.addWidget(btn_set_size)
+
+        # 按钮: 自定义棋盘
+        btn_customize = QPushButton("Customize")
+        btn_customize.clicked.connect(self.customize)
+        self.qvbox_layout_left.addWidget(btn_customize)
 
         # 初始化棋盘逻辑
         self.game = GameLogic(size=3)
@@ -38,13 +53,13 @@ class GameWindow(QWidget):
         self.load_board()
 
         # 右侧功能按钮及展示区
-        self.qvbox_layout = QVBoxLayout()
-        layout.addLayout(self.qvbox_layout)
+        self.qvbox_layout_right = QVBoxLayout()
+        layout.addLayout(self.qvbox_layout_right)
 
         # 解答按钮
         btn_solve = QPushButton("Solve")
         btn_solve.clicked.connect(self.solve_puzzle)
-        self.qvbox_layout.addWidget(btn_solve)
+        self.qvbox_layout_right.addWidget(btn_solve)
 
         # 新增按钮: 上一步/下一步
         self.btn_prev = QPushButton("⬅️")  # 上一步
@@ -55,18 +70,13 @@ class GameWindow(QWidget):
         # 初始禁用，等拿到解题结果后再启用
         self.btn_prev.setEnabled(False)
         self.btn_next.setEnabled(False)
-        self.qvbox_layout.addWidget(self.btn_prev)
-        self.qvbox_layout.addWidget(self.btn_next)
+        self.qvbox_layout_right.addWidget(self.btn_prev)
+        self.qvbox_layout_right.addWidget(self.btn_next)
 
         # 步骤展示区(比如用QTextEdit，或者QLabel等都行)
         self.steps_display = QTextEdit()
         self.steps_display.setReadOnly(True)
-        self.qvbox_layout.addWidget(self.steps_display)
-
-        # 设置棋盘按钮
-        btn_set_size = QPushButton("Set Size")
-        btn_set_size.clicked.connect(self.set_size)
-        self.qvbox_layout.addWidget(btn_set_size)
+        self.qvbox_layout_right.addWidget(self.steps_display)
 
         self.setLayout(layout)
 
@@ -204,3 +214,24 @@ class GameWindow(QWidget):
 
     def go_back(self):
         self.stacked_widget.setCurrentIndex(0)
+
+    def customize(self):
+        # 弹出一个自定义对话框
+        dialog = CustomizeGameDialog()
+        if dialog.exec_() == QDialog.Accepted:
+            # 获取玩家编辑好的布局(二维列表)
+            board_2d = dialog.get_custom_layout()
+            # 赋值给 self.game
+            self.game.board = board_2d
+            # 找空格
+            for i in range(self.game.size):
+                for j in range(self.game.size):
+                    if self.game.board[i][j] == 0:
+                        self.game.empty_pos = (i, j)
+                        break
+            # 检查 solvable（如果对话框已经检查过，这里可略过）
+            if not self.game.is_solvable():
+                QMessageBox.information(self, "Error", "Puzzle is not solvable.")
+            else:
+                # 更新UI
+                self.load_board()
