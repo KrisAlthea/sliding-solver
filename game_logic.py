@@ -71,3 +71,6 @@ class GameLogic:
         target = [[i * self.size + j + 1 for j in range(self.size)] for i in range(self.size)]
         target[-1][-1] = 0
         return self.board == target
+
+    def solve(self):
+        pass

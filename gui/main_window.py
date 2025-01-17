@@ -1,52 +1,50 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QGridLayout, QPushButton, QMessageBox
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton, QDialog, QApplication
 
-from game_logic import GameLogic
+from gui.game_window import GameWindow
+from gui.main_menu import MainMenu
+from gui.select_size_dialog import SelectSizeDialog
 
 
-class MainWindow(QMainWindow):
-    def __init__(self):
+class MainWindow(QWidget):
+    def __init__(self, stacked_widget):
         super().__init__()
+        self.stacked_widget = stacked_widget
+        self.init_ui()
+
+
+    def init_ui(self):
         self.setWindowTitle("Sliding Solver")
-        self.setGeometry(100, 100, 400, 400)
 
-        # 初始化棋盘逻辑
-        self.game = GameLogic(size=3)
-        self.game.generate_board()
+        layout = QVBoxLayout()
 
-        # 创建主窗口小部件和布局
-        central_widget = QWidget(self)
-        self.setCentralWidget(central_widget)
-        self.grid_layout = QGridLayout()
-        central_widget.setLayout(self.grid_layout)
+        title = QLabel("Sliding Solver")
+        layout.addWidget(title)
 
-        # 加载棋盘状态到界面
-        self.load_board()
+        btn_start = QPushButton("Start")
+        btn_customize = QPushButton("Customize")
+        btn_history = QPushButton("History")
+        btn_exit = QPushButton("Exit")
 
-    def load_board(self):
-        # 清空
-        for i in reversed(range(self.grid_layout.count())):
-            widget = self.grid_layout.itemAt(i).widget()
-            if widget:
-                widget.setParent(None)
+        layout.addWidget(btn_start)
+        layout.addWidget(btn_customize)
+        layout.addWidget(btn_history)
+        layout.addWidget(btn_exit)
 
-        # 遍历棋盘添加按钮
-        for i, row in enumerate(self.game.board):
-            for j, num in enumerate(row):
-                if num == 0:
-                    continue
-                button = QPushButton(str(num))
-                button.clicked.connect(lambda _, x=i, y=j: self.handle_move(x, y))
-                self.grid_layout.addWidget(button, i, j)
+        self.setLayout(layout)
 
-    def handle_move(self, x, y):
-        # 计算点击的按钮与空格的相对位置
-        empty_x, empty_y = self.game.empty_pos
-        direction = (x - empty_x, y - empty_y)
+        btn_start.clicked.connect(self.start_game)
+        btn_customize.clicked.connect(self.customize_game)
+        btn_history.clicked.connect(self.game_history)
+        btn_exit.clicked.connect(self.exit_game)
 
-        if direction in GameLogic.directions.values():
-            self.game.move(direction)
-            self.load_board()
+    def start_game(self):
+        self.stacked_widget.setCurrentIndex(1)
 
-            # 检查是否完成
-            if self.game.is_solved():
-                QMessageBox.information(self, "Victory", "Congratulations! You solved the puzzle!")
+    def customize_game(self):
+        self.stacked_widget.setCurrentIndex(2)
+
+    def game_history(self):
+        self.stacked_widget.setCurrentIndex(3)
+
+    def exit_game(self):
+        QApplication.quit()
