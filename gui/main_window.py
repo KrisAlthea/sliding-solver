@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton, QDialog, QApplication
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton, QDialog, QApplication, QMessageBox
 
 
 class MainWindow(QWidget):
@@ -17,17 +17,14 @@ class MainWindow(QWidget):
         layout.addWidget(title)
 
         btn_start = QPushButton("Start")
-        btn_history = QPushButton("History")
         btn_exit = QPushButton("Exit")
 
         layout.addWidget(btn_start)
-        layout.addWidget(btn_history)
         layout.addWidget(btn_exit)
 
         self.setLayout(layout)
 
         btn_start.clicked.connect(self.start_game)
-        btn_history.clicked.connect(self.game_history)
         btn_exit.clicked.connect(self.exit_game)
 
     def start_game(self):
@@ -37,4 +34,8 @@ class MainWindow(QWidget):
         self.stacked_widget.setCurrentIndex(2)
 
     def exit_game(self):
-        QApplication.quit()
+        reply = QMessageBox.question(self, '确认退出', '确定要退出游戏吗？',
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            QApplication.quit()
+

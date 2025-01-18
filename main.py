@@ -21,5 +21,5 @@ class App(QApplication):
         self.stacked_widget.show()
 
 if __name__ == "__main__":
-    app = App(sys.argv)
-    sys.exit(app.exec_())
+    PuzzleApp = App(sys.argv)
+    sys.exit(PuzzleApp.exec_())

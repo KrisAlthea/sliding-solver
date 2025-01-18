@@ -97,10 +97,7 @@ class GameWindow(QWidget):
 
         self.setLayout(layout)
 
-    def load_board(self):
-        """
-        从 self.game.board 里读取并刷新UI。
-        """
+    def load_board_state(self, board_2d, enable_move=True):
         # 清空之前的格子
         for i in reversed(range(self.grid_layout.count())):
             widget = self.grid_layout.itemAt(i).widget()
@@ -108,33 +105,20 @@ class GameWindow(QWidget):
                 widget.setParent(None)
 
         # 遍历棋盘添加按钮
-        for i, row in enumerate(self.game.board):
-            for j, num in enumerate(row):
-                if num == 0:
-                    continue
-                button = QPushButton(str(num))
-                button.clicked.connect(lambda _, x=i, y=j: self.handle_move(x, y))
-                self.grid_layout.addWidget(button, i, j)
-
-    def load_state(self, board_2d):
-        """
-        直接使用传入的棋盘状态(二位列表)刷新UI。
-        """
-        # 清空UI
-        for i in reversed(range(self.grid_layout.count())):
-            widget = self.grid_layout.itemAt(i).widget()
-            if widget:
-                widget.setParent(None)
-
-        # 按照 board_2d 布局，逐个放置按钮
         for i, row in enumerate(board_2d):
             for j, num in enumerate(row):
                 if num == 0:
                     continue
                 button = QPushButton(str(num))
-                # 这里的点击事件可要可不要，因为处于“演示模式”时，未必需要再点移动
-                button.clicked.connect(lambda _, x=i, y=j: self.handle_move(x, y))
+                if enable_move:
+                    button.clicked.connect(lambda _, x=i, y=j: self.handle_move(x, y))
                 self.grid_layout.addWidget(button, i, j)
+
+    def load_board(self):
+        self.load_board_state(self.game.board)
+
+    def load_state(self, board_2d):
+        self.load_board_state(board_2d, enable_move=False)
 
     def handle_move(self, x, y):
         # 计算点击的按钮与空格的相对位置
@@ -238,6 +222,9 @@ class GameWindow(QWidget):
             self.step_count = 0
             # 重新加载棋盘
             self.load_board()
+            # 禁用上一步下一步按钮
+            self.btn_next.setEnabled(False)
+            self.btn_prev.setEnabled(False)
 
     def go_back(self):
         self.stacked_widget.setCurrentIndex(0)
@@ -264,6 +251,9 @@ class GameWindow(QWidget):
                 self.load_board()
                 # 重新计步
                 self.step_count = 0
+                # 禁用上一步下一步按钮
+                self.btn_next.setEnabled(False)
+                self.btn_prev.setEnabled(False)
 
     def update_time_label(self):
         elapsed = int(time.time() - self.start_time)

@@ -1,3 +1,4 @@
+from PyQt5.QtGui import QIntValidator
 from PyQt5.QtWidgets import QWidget, QGridLayout, QLineEdit, QPushButton, QMessageBox, QSpinBox, QVBoxLayout, QDialog, \
     QHBoxLayout
 
@@ -48,6 +49,9 @@ class CustomizeGameDialog(QDialog):
             row_vals = []
             for j in range(self.size):
                 text = self.inputs[i][j].text().strip()
+                if not text:
+                    QMessageBox.warning(self, "Error", "All cells must be filled.")
+                    return
                 if not text.isdigit():
                     QMessageBox.warning(self, "Error", "Please input a digit")
                     return
@@ -57,8 +61,8 @@ class CustomizeGameDialog(QDialog):
 
         # 检查数字是否包含0~size^2-1且无重复
         flat = [v for row in temp_values for v in row]
-        # 允许0出现1次，1~8各出现最多1次
-        if sorted(flat) != [0,1,2,3,4,5,6,7,8]:
+        expected = list(range(self.size ** 2))
+        if sorted(flat) != expected:
             QMessageBox.warning(self, "Error", f"The puzzle must contain digits 0-{self.size**2-1} exactly once!")
             return
 
@@ -87,13 +91,16 @@ class CustomizeGameDialog(QDialog):
             widget = self.qgrid_layout.itemAt(i).widget()
             if widget:
                 widget.setParent(None)
+        # 重置输入列表
+        self.inputs = []
         # 生成网格
         for i in range(self.size):
             row_inputs = []
             for j in range(self.size):
                 line_edit = QLineEdit(self)
                 line_edit.setFixedWidth(30)
-                # 可加一些校验器，只允许数字
+                # 只允许输入合法数字
+                line_edit.setValidator(QIntValidator(0, self.size**2 - 1, self))
                 self.qgrid_layout.addWidget(line_edit, i, j)
                 row_inputs.append(line_edit)
             self.inputs.append(row_inputs)

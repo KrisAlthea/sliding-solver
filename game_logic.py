@@ -14,6 +14,8 @@ class GameLogic:
         self.size = size        # 棋盘尺寸
         self.board = []         # 棋盘的状态
         self.empty_pos = None   # 空格的位置
+        # 目标状态
+        self.goal_state = tuple(list(range(1, self.size ** 2)) + [0])
 
     def generate_board(self):
         while True:
@@ -62,15 +64,8 @@ class GameLogic:
             self.empty_pos = (nx, ny)
             return True
 
-    def shuffle_board(self, moves=100):
-        for i in range(moves):
-            direction = random.choice(list(GameLogic.directions.values()))
-            self.move(direction)
-
     def is_solved(self):
-        target = [[i * self.size + j + 1 for j in range(self.size)] for i in range(self.size)]
-        target[-1][-1] = 0
-        return self.board == target
+        return self._board_to_tuple(self.board) == self.goal_state
 
     def solve(self):
         """
@@ -114,8 +109,8 @@ class GameLogic:
                     heapq.heappush(open_list, (priority, new_cost, next_state))
                     parents[next_state] = (current_state, direction_name)
 
-        # 没搜索到解就返回 None or []
-        return None
+        # 没搜索到解就返回 []
+        return []
 
     def _heuristic(self, state_tuple):
         """
@@ -166,11 +161,7 @@ class GameLogic:
         return tuple(list(range(1, self.size ** 2)) + [0])
 
     def _tuple_to_2d(self, state_tuple):
-        """将扁平 tuple 转为二维 list"""
-        board_2d = []
-        for i in range(0, len(state_tuple), self.size):
-            board_2d.append(list(state_tuple[i:i + self.size]))
-        return board_2d
+        return [list(state_tuple[i:i + self.size]) for i in range(0, len(state_tuple), self.size)]
 
     def _get_neighbors(self, state_tuple):
         """
@@ -200,28 +191,3 @@ class GameLogic:
                 neighbors.append((direction_name, new_state))
 
         return neighbors
-
-    def solve_and_get_path(self):
-        """
-        1) 调用 self.solve() 获取到一串移动方向
-        2) 根据这串移动方向，从当前状态一步步“模拟移动”，
-           记录并返回所有中间状态(含开头和结尾)。
-        """
-        moves = self.solve()
-        if not moves:
-            return []
-
-        # 先复制一份当前 board (避免直接改到原来的 self.board)
-        import copy
-        temp_game = copy.deepcopy(self)  # 复制整个 GameLogic 对象
-
-        state_path = []
-        # 把扁平 tuple 或直接 board 数组都行，这里假设返回二维列表
-        state_path.append(copy.deepcopy(temp_game.board))
-
-        # 根据 moves 逐步移动，记录每一步状态
-        for move_dir in moves:
-            temp_game.move(GameLogic.directions[move_dir])
-            state_path.append(copy.deepcopy(temp_game.board))
-
-        return state_path
