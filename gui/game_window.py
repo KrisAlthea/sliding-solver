@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QWidget, QGridLayout, QPushButton, QMessageBox, QVBoxLayout, QHBoxLayout, QDialog, \
-    QTextEdit, QLabel, QFrame
-from PyQt5.QtCore import QTimer
+    QTextEdit, QLabel, QFrame, QSizePolicy
+from PyQt5.QtCore import QTimer, QPropertyAnimation
 import copy
 import time
 
@@ -27,10 +27,16 @@ class GameWindow(QWidget):
 
         layout = QVBoxLayout()
 
+        layout.setContentsMargins(20, 20, 20, 20)  # 设置外边距
+        layout.setSpacing(10)  # 设置控件间距
+
         top_bar_layout = QHBoxLayout()
+        top_bar_layout.setSpacing(10)
         game_layout = QHBoxLayout()
+        game_layout.setSpacing(10)
         divider = QFrame()
         divider.setFrameShape(QFrame.HLine)
+        divider.setFrameShadow(QFrame.Sunken)
         layout.addLayout(top_bar_layout)
         layout.addWidget(divider)
         layout.addLayout(game_layout)
@@ -110,6 +116,19 @@ class GameWindow(QWidget):
                 if num == 0:
                     continue
                 button = QPushButton(str(num))
+                button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                button.setStyleSheet("""
+                                QPushButton {
+                                    background-color: #4CAF50;
+                                    color: white;
+                                    border: 2px solid #388E3C;
+                                    border-radius: 10px;
+                                    font-size: 20px;
+                                }
+                                QPushButton:hover {
+                                    background-color: #45a049;
+                                }
+                            """)
                 if enable_move:
                     button.clicked.connect(lambda _, x=i, y=j: self.handle_move(x, y))
                 self.grid_layout.addWidget(button, i, j)

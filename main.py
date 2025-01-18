@@ -20,6 +20,10 @@ class App(QApplication):
         self.stacked_widget.setCurrentIndex(0)
         self.stacked_widget.show()
 
+        # 加载样式表
+        with open("assets/style.qss", "r") as f:
+            self.setStyleSheet(f.read())
+
 if __name__ == "__main__":
     PuzzleApp = App(sys.argv)
     sys.exit(PuzzleApp.exec_())
