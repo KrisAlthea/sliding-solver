@@ -1,5 +1,8 @@
-from PyQt5.QtWidgets import QWidget, QGridLayout, QPushButton, QMessageBox, QVBoxLayout, QHBoxLayout, QDialog, QTextEdit
+from PyQt5.QtWidgets import QWidget, QGridLayout, QPushButton, QMessageBox, QVBoxLayout, QHBoxLayout, QDialog, \
+    QTextEdit, QLabel, QFrame
+from PyQt5.QtCore import QTimer
 import copy
+import time
 
 from game_logic import GameLogic
 from gui.customize_dialog import CustomizeGameDialog
@@ -9,8 +12,10 @@ from gui.select_size_dialog import SelectSizeDialog
 class GameWindow(QWidget):
     def __init__(self, stacked_widget):
         super().__init__()
+        self.game = None
         self.stacked_widget = stacked_widget
-
+        self.start_time = 0
+        self.step_count = 0
         # 准备存储解题过程
         self.solution_states = None # 存放所有中间状态
         self.solution_moves = None  # 存放移动方向
@@ -20,63 +25,75 @@ class GameWindow(QWidget):
 
     def init_ui(self):
 
-        layout = QHBoxLayout()
+        layout = QVBoxLayout()
 
-        # 左侧功能按钮
-        self.qvbox_layout_left = QVBoxLayout()
-        layout.addLayout(self.qvbox_layout_left)
+        top_bar_layout = QHBoxLayout()
+        game_layout = QHBoxLayout()
+        divider = QFrame()
+        divider.setFrameShape(QFrame.HLine)
+        layout.addLayout(top_bar_layout)
+        layout.addWidget(divider)
+        layout.addLayout(game_layout)
+
+        # 左侧功能区
+        game_layout_left = QVBoxLayout()
+        game_layout.addLayout(game_layout_left)
+        # 棋盘区域
+        self.grid_layout = QGridLayout()
+        game_layout.addLayout(self.grid_layout)
+        # 右侧功能区
+        game_layout_right = QVBoxLayout()
+        game_layout.addLayout(game_layout_right)
 
         # 按钮：返回主菜单
-        btn_back = QPushButton("Return Main")
+        btn_back = QPushButton("Main")
         btn_back.clicked.connect(self.go_back)
-        self.qvbox_layout_left.addWidget(btn_back)
+        top_bar_layout.addWidget(btn_back)
+
+        # 计步器，计时器
+        self.lbl_steps = QLabel("steps: 0")
+        self.lbl_time = QLabel("time: 00:00")
+        self.elapsed_timer = QTimer(self)
+        self.elapsed_timer.timeout.connect(self.update_time_label)
+        top_bar_layout.addWidget(self.lbl_steps)
+        top_bar_layout.addWidget(self.lbl_time)
+        # 解答按钮
+        btn_solve = QPushButton("Solve")
+        btn_solve.clicked.connect(self.solve_puzzle)
+        top_bar_layout.addWidget(btn_solve)
 
         # 按钮: 设置棋盘大小
         btn_set_size = QPushButton("Set Size")
         btn_set_size.clicked.connect(self.set_size)
-        self.qvbox_layout_left.addWidget(btn_set_size)
+        game_layout_left.addWidget(btn_set_size)
 
         # 按钮: 自定义棋盘
         btn_customize = QPushButton("Customize")
         btn_customize.clicked.connect(self.customize)
-        self.qvbox_layout_left.addWidget(btn_customize)
+        game_layout_left.addWidget(btn_customize)
 
         # 初始化棋盘逻辑
         self.game = GameLogic(size=3)
         self.game.generate_board()
-
-        # 棋盘区域
-        self.grid_layout = QGridLayout()
-        layout.addLayout(self.grid_layout)
-
         # 加载棋盘状态到界面
         self.load_board()
 
-        # 右侧功能按钮及展示区
-        self.qvbox_layout_right = QVBoxLayout()
-        layout.addLayout(self.qvbox_layout_right)
-
-        # 解答按钮
-        btn_solve = QPushButton("Solve")
-        btn_solve.clicked.connect(self.solve_puzzle)
-        self.qvbox_layout_right.addWidget(btn_solve)
-
-        # 新增按钮: 上一步/下一步
-        self.btn_prev = QPushButton("⬅️")  # 上一步
+        # 按钮: 上一步/下一步
+        self.btn_prev = QPushButton("◀️")  # 上一步
         self.btn_prev.clicked.connect(self.show_previous_step)
-        self.btn_next = QPushButton("➡️")  # 下一步
+        self.btn_next = QPushButton("▶️")  # 下一步
         self.btn_next.clicked.connect(self.show_next_step)
 
         # 初始禁用，等拿到解题结果后再启用
         self.btn_prev.setEnabled(False)
         self.btn_next.setEnabled(False)
-        self.qvbox_layout_right.addWidget(self.btn_prev)
-        self.qvbox_layout_right.addWidget(self.btn_next)
+        game_layout_right.addWidget(self.btn_prev)
+        game_layout_right.addWidget(self.btn_next)
 
         # 步骤展示区(比如用QTextEdit，或者QLabel等都行)
         self.steps_display = QTextEdit()
         self.steps_display.setReadOnly(True)
-        self.qvbox_layout_right.addWidget(self.steps_display)
+        game_layout_right.addWidget(self.steps_display)
 
         self.setLayout(layout)
 
@@ -125,11 +142,19 @@ class GameWindow(QWidget):
         direction = (x - empty_x, y - empty_y)
 
         if direction in GameLogic.directions.values():
-            self.game.move(direction)
+            success = self.game.move(direction)
+            if success:
+                self.step_count += 1
+                # 走第一步同时开始计时
+                if self.step_count == 1:
+                    self.start_time = time.time()
+                    self.elapsed_timer.start(1000)  # 每 1 秒触发一次 update_time_label
+                    self.lbl_time.setText("time: 00:00")
+                self.lbl_steps.setText(f"steps: {self.step_count}")
             self.load_board()
-
             # 检查是否完成
             if self.game.is_solved():
+                self.elapsed_timer.stop()
                 QMessageBox.information(self, "Victory", "Congratulations! You solved the puzzle!")
 
     def solve_puzzle(self):
@@ -144,7 +169,7 @@ class GameWindow(QWidget):
         if not self.solution_moves:
             QMessageBox.information(self, "Solution", "No solution found or already solved.")
             return
-
+        self.elapsed_timer.stop()
         # 生成所有中间状态
         temp_game = copy.deepcopy(self.game)  # 复制当前游戏
         self.solution_states = []
@@ -209,6 +234,8 @@ class GameWindow(QWidget):
             self.game.size = size
             self.game.generate_board()
 
+            # 重新计步
+            self.step_count = 0
             # 重新加载棋盘
             self.load_board()
 
@@ -235,3 +262,11 @@ class GameWindow(QWidget):
             else:
                 # 更新UI
                 self.load_board()
+                # 重新计步
+                self.step_count = 0
+
+    def update_time_label(self):
+        elapsed = int(time.time() - self.start_time)
+        minutes = elapsed // 60
+        seconds = elapsed % 60
+        self.lbl_time.setText(f"time: {minutes:02d}:{seconds:02d}")
