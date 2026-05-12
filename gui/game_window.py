@@ -5,17 +5,20 @@ import copy
 import time
 
 from game_logic import GameLogic
+from history.recording import build_game_record
 from gui.customize_dialog import CustomizeGameDialog
 from gui.select_size_dialog import SelectSizeDialog
 
 
 class GameWindow(QWidget):
-    def __init__(self, stacked_widget):
+    def __init__(self, stacked_widget, history_store=None):
         super().__init__()
         self.game = None
+        self.history_store = history_store
         self.stacked_widget = stacked_widget
         self.start_time = 0
         self.step_count = 0
+        self.session_initial_board = None
         # 准备存储解题过程
         self.solution_states = None # 存放所有中间状态
         self.solution_moves = None  # 存放移动方向
@@ -77,6 +80,7 @@ class GameWindow(QWidget):
         self.game.generate_board()
         # 加载棋盘状态到界面
         self.load_board()
+        self.session_initial_board = copy.deepcopy(self.game.board)
 
         # 按钮: 上一步/下一步
         self.btn_prev = QPushButton("◀️")  # 上一步
@@ -120,6 +124,58 @@ class GameWindow(QWidget):
     def load_state(self, board_2d):
         self.load_board_state(board_2d, enable_move=False)
 
+    def _reset_steps_and_timer(self):
+        self.elapsed_timer.stop()
+        self.start_time = 0
+        self.step_count = 0
+        self.lbl_steps.setText("steps: 0")
+        self.lbl_time.setText("time: 00:00")
+
+    def _reset_solution_navigation(self):
+        self.solution_states = None
+        self.solution_moves = None
+        self.current_step_index = 0
+        self.btn_next.setEnabled(False)
+        self.btn_prev.setEnabled(False)
+        self.steps_display.clear()
+        if self.game is not None:
+            self.load_board()
+
+    def _reset_game_view_state(self):
+        self._reset_steps_and_timer()
+        self._reset_solution_navigation()
+        self.load_board()
+        self.session_initial_board = copy.deepcopy(self.game.board)
+
+    def _set_empty_position_from_board(self):
+        for i, row in enumerate(self.game.board):
+            for j, value in enumerate(row):
+                if value == 0:
+                    self.game.empty_pos = (i, j)
+                    return
+        raise ValueError("Puzzle board must contain one empty tile (0).")
+
+    def _save_completed_game(self, source):
+        if self.history_store is None:
+            return
+
+        elapsed = int(time.time() - self.start_time) if self.start_time else 0
+        initial_board = copy.deepcopy(self.session_initial_board or self.game.board)
+        final_board = copy.deepcopy(self.game.board)
+        record = build_game_record(
+            board_size=self.game.size,
+            initial_board=initial_board,
+            final_board=final_board,
+            steps=self.step_count,
+            duration_seconds=elapsed,
+            source=source,
+        )
+
+        try:
+            self.history_store.append_record(record)
+        except (OSError, ValueError, TypeError) as exc:
+            QMessageBox.warning(self, "History Error", f"Failed to save game history: {exc}")
+
     def handle_move(self, x, y):
         # 计算点击的按钮与空格的相对位置
         empty_x, empty_y = self.game.empty_pos
@@ -139,6 +195,7 @@ class GameWindow(QWidget):
             # 检查是否完成
             if self.game.is_solved():
                 self.elapsed_timer.stop()
+                self._save_completed_game(source="manual")
                 QMessageBox.information(self, "Victory", "Congratulations! You solved the puzzle!")
 
     def solve_puzzle(self):
@@ -215,19 +272,21 @@ class GameWindow(QWidget):
             size = dialog.get_selected_size()
 
             # 更新棋盘逻辑
-            self.game.size = size
+            self.game.set_size(size)
             self.game.generate_board()
-
-            # 重新计步
-            self.step_count = 0
-            # 重新加载棋盘
-            self.load_board()
-            # 禁用上一步下一步按钮
-            self.btn_next.setEnabled(False)
-            self.btn_prev.setEnabled(False)
+            self._reset_game_view_state()
 
     def go_back(self):
         self.stacked_widget.setCurrentIndex(0)
+
+    def load_replay_record(self, record):
+        if len(record.final_board) != record.board_size or any(len(row) != record.board_size for row in record.final_board):
+            QMessageBox.warning(self, "Replay Error", "Record board size does not match replay data.")
+            return
+        self.game.set_size(record.board_size)
+        self.game.board = copy.deepcopy(record.final_board)
+        self._set_empty_position_from_board()
+        self._reset_game_view_state()
 
     def customize(self):
         # 弹出一个自定义对话框
@@ -236,24 +295,14 @@ class GameWindow(QWidget):
             # 获取玩家编辑好的布局(二维列表)
             board_2d = dialog.get_custom_layout()
             # 赋值给 self.game
+            self.game.set_size(len(board_2d))
             self.game.board = board_2d
-            # 找空格
-            for i in range(self.game.size):
-                for j in range(self.game.size):
-                    if self.game.board[i][j] == 0:
-                        self.game.empty_pos = (i, j)
-                        break
+            self._set_empty_position_from_board()
             # 检查 solvable（如果对话框已经检查过，这里可略过）
             if not self.game.is_solvable():
                 QMessageBox.information(self, "Error", "Puzzle is not solvable.")
             else:
-                # 更新UI
-                self.load_board()
-                # 重新计步
-                self.step_count = 0
-                # 禁用上一步下一步按钮
-                self.btn_next.setEnabled(False)
-                self.btn_prev.setEnabled(False)
+                self._reset_game_view_state()
 
     def update_time_label(self):
         elapsed = int(time.time() - self.start_time)

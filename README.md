@@ -11,13 +11,16 @@ SlidingSolver/
 │
 ├── main.py               		# 主程序入口
 ├── game_logic.py         		# 游戏逻辑模块（棋盘生成和操作）
+├── history/              		# 历史记录模块（数据模型、持久化、记录构建）
 ├── gui/                  		# GUI 相关模块
 │   ├── __init__.py       		# 标记为 Python 包
 │   ├── main_window.py    		# 主窗口的逻辑
 │   ├── game_window.py    		# 游戏棋盘的视图
+│   ├── history_window.py 		# 历史记录页面
 │   ├── customize_dialog.py		# 自定义棋盘对话框
 │   ├── select_size_dialog.py	# 选择棋盘大小对话框
 │   └── utils.py          		# 界面工具函数
+├── tests/                		# 单元测试
 ├── assets/               		# 静态资源（如图标、背景图片等）
 │   ├── icon.png
 │   └── styles.qss        		# 界面样式表
@@ -29,4 +32,24 @@ SlidingSolver/
 1. 开始一局游戏
 2. 自定义棋盘
 3. 自动解答
-4. 历史记录...(待开发)
+4. 历史记录（本地 JSON 持久化）
+5. 历史回放（可将历史终局棋盘加载回游戏页）
+
+## 运行与测试
+
+```bash
+# 运行程序
+python main.py
+
+# 运行全部测试
+python -m pytest -q
+
+# 运行单个测试
+python -m pytest tests/test_game_logic.py::test_solve_returns_valid_moves_that_reach_goal_state -q
+```
+
+## 历史记录说明
+
+- 历史记录默认写入 `data/history.json`。
+- 每条记录包含：棋盘大小、初始/终局棋盘、步数、耗时、完成时间、来源。
+- 在主菜单进入 `History` 页面后，可查看记录详情并执行回放。
