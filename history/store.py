@@ -1,11 +1,12 @@
 import json
 from pathlib import Path
+from typing import Union
 
 from history.models import GameRecord
 
 
 class HistoryStore:
-    def __init__(self, file_path: Path | str = Path("data/history.json")):
+    def __init__(self, file_path: Union[Path, str] = Path("data/history.json")):
         self.file_path = Path(file_path)
 
     def load_records(self):

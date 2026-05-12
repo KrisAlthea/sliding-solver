@@ -1,12 +1,13 @@
 from dataclasses import dataclass
+from typing import List
 
 
 @dataclass(frozen=True)
 class GameRecord:
     id: str
     board_size: int
-    initial_board: list[list[int]]
-    final_board: list[list[int]]
+    initial_board: List[List[int]]
+    final_board: List[List[int]]
     steps: int
     duration_seconds: int
     finished_at: str

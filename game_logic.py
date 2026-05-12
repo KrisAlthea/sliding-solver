@@ -17,6 +17,10 @@ class GameLogic:
         # 目标状态
         self.goal_state = tuple(list(range(1, self.size ** 2)) + [0])
 
+    def set_size(self, size):
+        self.size = size
+        self.goal_state = tuple(list(range(1, self.size ** 2)) + [0])
+
     def generate_board(self):
         while True:
             nums = list(range(self.size**2))

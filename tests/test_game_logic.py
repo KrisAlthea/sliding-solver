@@ -140,3 +140,20 @@ def test_solve_returns_valid_moves_that_reach_goal_state():
     assert moves == ["right"]
     apply_moves(game, moves)
     assert game.is_solved() is True
+
+
+def test_set_size_recomputes_goal_state_for_new_size():
+    game = GameLogic(size=3)
+
+    game.set_size(4)
+    game.board = [
+        [1, 2, 3, 4],
+        [5, 6, 7, 8],
+        [9, 10, 11, 12],
+        [13, 14, 15, 0],
+    ]
+    game.empty_pos = (3, 3)
+
+    assert len(game.goal_state) == 16
+    assert game.goal_state[-1] == 0
+    assert game.is_solved() is True

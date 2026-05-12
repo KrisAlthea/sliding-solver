@@ -270,7 +270,7 @@ class GameWindow(QWidget):
             size = dialog.get_selected_size()
 
             # 更新棋盘逻辑
-            self.game.size = size
+            self.game.set_size(size)
             self.game.generate_board()
             self._reset_game_view_state()
 
@@ -278,7 +278,10 @@ class GameWindow(QWidget):
         self.stacked_widget.setCurrentIndex(0)
 
     def load_replay_record(self, record):
-        self.game.size = record.board_size
+        if len(record.final_board) != record.board_size or any(len(row) != record.board_size for row in record.final_board):
+            QMessageBox.warning(self, "Replay Error", "Record board size does not match replay data.")
+            return
+        self.game.set_size(record.board_size)
         self.game.board = copy.deepcopy(record.final_board)
         self._set_empty_position_from_board()
         self._reset_game_view_state()
@@ -290,7 +293,7 @@ class GameWindow(QWidget):
             # 获取玩家编辑好的布局(二维列表)
             board_2d = dialog.get_custom_layout()
             # 赋值给 self.game
-            self.game.size = len(board_2d)
+            self.game.set_size(len(board_2d))
             self.game.board = board_2d
             self._set_empty_position_from_board()
             # 检查 solvable（如果对话框已经检查过，这里可略过）
