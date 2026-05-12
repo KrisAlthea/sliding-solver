@@ -14,7 +14,10 @@ class HistoryStore:
             return []
 
         raw = json.loads(self.file_path.read_text(encoding="utf-8"))
-        return [GameRecord.from_dict(item) for item in raw]
+        try:
+            return [GameRecord.from_dict(item) for item in raw]
+        except KeyError as exc:
+            raise ValueError("Invalid history record data") from exc
 
     def append_record(self, record: GameRecord):
         records = self.load_records()
