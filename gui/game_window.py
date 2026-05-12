@@ -138,6 +138,8 @@ class GameWindow(QWidget):
         self.btn_next.setEnabled(False)
         self.btn_prev.setEnabled(False)
         self.steps_display.clear()
+        if self.game is not None:
+            self.load_board()
 
     def _reset_game_view_state(self):
         self._reset_steps_and_timer()
