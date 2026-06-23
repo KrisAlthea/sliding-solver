@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import QWidget, QGridLayout, QPushButton, QMessageBox, QVBoxLayout, QHBoxLayout, QDialog, \
     QTextEdit, QLabel, QFrame
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, Qt, QPropertyAnimation, QEasingCurve
+from PyQt5.QtGui import QKeySequence, QFont
 import copy
 import time
 
@@ -8,6 +9,10 @@ from game_logic import GameLogic
 from history.recording import build_game_record
 from gui.customize_dialog import CustomizeGameDialog
 from gui.select_size_dialog import SelectSizeDialog
+
+
+# 方向中文映射
+_DIR_CN = {"up": "↑", "down": "↓", "left": "←", "right": "→"}
 
 
 class GameWindow(QWidget):
@@ -19,15 +24,22 @@ class GameWindow(QWidget):
         self.start_time = 0
         self.step_count = 0
         self.session_initial_board = None
-        # 准备存储解题过程
-        self.solution_states = None # 存放所有中间状态
-        self.solution_moves = None  # 存放移动方向
+        # 解题过程存储
+        self.solution_states = None
+        self.solution_moves = None
         self.current_step_index = 0
+        # 动画回放
+        self.playback_timer = QTimer(self)
+        self.playback_timer.timeout.connect(self._playback_step)
+        self.is_playing = False
+        # 撤销栈
+        self.undo_stack = []  # [(board_2d, empty_pos), ...]
+        # 最优解步数
+        self.optimal_steps = None
 
         self.init_ui()
 
     def init_ui(self):
-
         layout = QVBoxLayout()
 
         top_bar_layout = QHBoxLayout()
@@ -48,72 +60,129 @@ class GameWindow(QWidget):
         game_layout_right = QVBoxLayout()
         game_layout.addLayout(game_layout_right)
 
-        # 按钮：返回主菜单
-        btn_back = QPushButton("Main")
+        # --- 顶部栏 ---
+        btn_back = QPushButton("🏠 Main")
         btn_back.clicked.connect(self.go_back)
         top_bar_layout.addWidget(btn_back)
 
-        # 计步器，计时器
         self.lbl_steps = QLabel("steps: 0")
+        self.lbl_steps.setFont(QFont("Monospace", 11))
         self.lbl_time = QLabel("time: 00:00")
+        self.lbl_time.setFont(QFont("Monospace", 11))
+        self.lbl_optimal = QLabel("")
+        self.lbl_optimal.setStyleSheet("color: #888; font-size: 11px;")
         self.elapsed_timer = QTimer(self)
         self.elapsed_timer.timeout.connect(self.update_time_label)
         top_bar_layout.addWidget(self.lbl_steps)
         top_bar_layout.addWidget(self.lbl_time)
-        # 解答按钮
-        btn_solve = QPushButton("Solve")
+        top_bar_layout.addWidget(self.lbl_optimal)
+
+        btn_solve = QPushButton("🔍 Solve")
         btn_solve.clicked.connect(self.solve_puzzle)
         top_bar_layout.addWidget(btn_solve)
 
-        # 按钮: 设置棋盘大小
-        btn_set_size = QPushButton("Set Size")
+        # --- 左侧按钮 ---
+        btn_set_size = QPushButton("📐 Set Size")
         btn_set_size.clicked.connect(self.set_size)
         game_layout_left.addWidget(btn_set_size)
 
-        # 按钮: 自定义棋盘
-        btn_customize = QPushButton("Customize")
+        btn_customize = QPushButton("✏️ Customize")
         btn_customize.clicked.connect(self.customize)
         game_layout_left.addWidget(btn_customize)
 
-        # 初始化棋盘逻辑
+        btn_undo = QPushButton("↩️ Undo")
+        btn_undo.setShortcut(QKeySequence("Ctrl+Z"))
+        btn_undo.clicked.connect(self.undo_move)
+        game_layout_left.addWidget(btn_undo)
+
+        btn_reset = QPushButton("🔄 Reset")
+        btn_reset.clicked.connect(self.reset_board)
+        game_layout_left.addWidget(btn_reset)
+
+        # --- 初始化棋盘 ---
         self.game = GameLogic(size=3)
         self.game.generate_board()
-        # 加载棋盘状态到界面
         self.load_board()
         self.session_initial_board = copy.deepcopy(self.game.board)
 
-        # 按钮: 上一步/下一步
-        self.btn_prev = QPushButton("◀️")  # 上一步
+        # --- 右侧控制 ---
+        # 回放控制栏
+        playback_layout = QHBoxLayout()
+        self.btn_prev = QPushButton("◀")
+        self.btn_prev.setFixedWidth(40)
         self.btn_prev.clicked.connect(self.show_previous_step)
-        self.btn_next = QPushButton("▶️")  # 下一步
-        self.btn_next.clicked.connect(self.show_next_step)
-
-        # 初始禁用，等拿到解题结果后再启用
         self.btn_prev.setEnabled(False)
-        self.btn_next.setEnabled(False)
-        game_layout_right.addWidget(self.btn_prev)
-        game_layout_right.addWidget(self.btn_next)
 
-        # 步骤展示区(比如用QTextEdit，或者QLabel等都行)
+        self.btn_play = QPushButton("▶ Play")
+        self.btn_play.setFixedWidth(70)
+        self.btn_play.clicked.connect(self.toggle_playback)
+        self.btn_play.setEnabled(False)
+
+        self.btn_next = QPushButton("▶")
+        self.btn_next.setFixedWidth(40)
+        self.btn_next.clicked.connect(self.show_next_step)
+        self.btn_next.setEnabled(False)
+
+        playback_layout.addWidget(self.btn_prev)
+        playback_layout.addWidget(self.btn_play)
+        playback_layout.addWidget(self.btn_next)
+        game_layout_right.addLayout(playback_layout)
+
+        # 速度选择
+        speed_layout = QHBoxLayout()
+        speed_layout.addWidget(QLabel("speed:"))
+        self.speed_buttons = {}
+        for label, ms in [("0.5x", 1000), ("1x", 500), ("2x", 250), ("4x", 125)]:
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.setFixedWidth(45)
+            btn.clicked.connect(lambda _, m=ms: self._set_speed(m))
+            speed_layout.addWidget(btn)
+            self.speed_buttons[label] = btn
+        self.speed_buttons["1x"].setChecked(True)
+        self.playback_interval = 500
+        game_layout_right.addLayout(speed_layout)
+
+        # 步骤展示区
         self.steps_display = QTextEdit()
         self.steps_display.setReadOnly(True)
+        self.steps_display.setFont(QFont("Monospace", 10))
         game_layout_right.addWidget(self.steps_display)
 
         self.setLayout(layout)
 
-    def load_board_state(self, board_2d, enable_move=True):
-        # 清空之前的格子
+    # ------------------------------------------------------------------
+    # 棋盘渲染
+    # ------------------------------------------------------------------
+
+    def load_board_state(self, board_2d, enable_move=True, highlight_pos=None):
+        """渲染棋盘。highlight_pos=(r,c) 高亮当前位置（回放时用）"""
         for i in reversed(range(self.grid_layout.count())):
             widget = self.grid_layout.itemAt(i).widget()
             if widget:
                 widget.setParent(None)
 
-        # 遍历棋盘添加按钮
+        size = len(board_2d)
         for i, row in enumerate(board_2d):
             for j, num in enumerate(row):
                 if num == 0:
+                    # 空格用透明占位
+                    placeholder = QLabel("")
+                    placeholder.setFixedSize(60, 60)
+                    placeholder.setStyleSheet("background: #f0f0f0; border: 2px dashed #ccc; border-radius: 6px;")
+                    self.grid_layout.addWidget(placeholder, i, j)
                     continue
                 button = QPushButton(str(num))
+                button.setFixedSize(60, 60)
+                button.setFont(QFont("Arial", 16, QFont.Bold))
+                style = "QPushButton { background: #4a90d9; color: white; border: none; border-radius: 6px; }"
+                if highlight_pos and (i, j) == highlight_pos:
+                    style = "QPushButton { background: #f5a623; color: white; border: 2px solid #d4880c; border-radius: 6px; }"
+                if not enable_move:
+                    style += "QPushButton:hover { background: #4a90d9; }"
+                else:
+                    style += "QPushButton:hover { background: #357abd; }"
+                button.setStyleSheet(style)
                 if enable_move:
                     button.clicked.connect(lambda _, x=i, y=j: self.handle_move(x, y))
                 self.grid_layout.addWidget(button, i, j)
@@ -121,8 +190,12 @@ class GameWindow(QWidget):
     def load_board(self):
         self.load_board_state(self.game.board)
 
-    def load_state(self, board_2d):
-        self.load_board_state(board_2d, enable_move=False)
+    def load_state(self, board_2d, highlight_pos=None):
+        self.load_board_state(board_2d, enable_move=False, highlight_pos=highlight_pos)
+
+    # ------------------------------------------------------------------
+    # 计时 / 计步
+    # ------------------------------------------------------------------
 
     def _reset_steps_and_timer(self):
         self.elapsed_timer.stop()
@@ -130,6 +203,7 @@ class GameWindow(QWidget):
         self.step_count = 0
         self.lbl_steps.setText("steps: 0")
         self.lbl_time.setText("time: 00:00")
+        self.lbl_optimal.setText("")
 
     def _reset_solution_navigation(self):
         self.solution_states = None
@@ -137,13 +211,17 @@ class GameWindow(QWidget):
         self.current_step_index = 0
         self.btn_next.setEnabled(False)
         self.btn_prev.setEnabled(False)
+        self.btn_play.setEnabled(False)
         self.steps_display.clear()
+        self._stop_playback()
+        self.optimal_steps = None
         if self.game is not None:
             self.load_board()
 
     def _reset_game_view_state(self):
         self._reset_steps_and_timer()
         self._reset_solution_navigation()
+        self.undo_stack.clear()
         self.load_board()
         self.session_initial_board = copy.deepcopy(self.game.board)
 
@@ -176,107 +254,229 @@ class GameWindow(QWidget):
         except (OSError, ValueError, TypeError) as exc:
             QMessageBox.warning(self, "History Error", f"Failed to save game history: {exc}")
 
+    def update_time_label(self):
+        elapsed = int(time.time() - self.start_time)
+        minutes = elapsed // 60
+        seconds = elapsed % 60
+        self.lbl_time.setText(f"time: {minutes:02d}:{seconds:02d}")
+
+    # ------------------------------------------------------------------
+    # 手动移动
+    # ------------------------------------------------------------------
+
     def handle_move(self, x, y):
-        # 计算点击的按钮与空格的相对位置
         empty_x, empty_y = self.game.empty_pos
         direction = (x - empty_x, y - empty_y)
 
         if direction in GameLogic.directions.values():
+            # 保存撤销状态
+            self.undo_stack.append((
+                copy.deepcopy(self.game.board),
+                self.game.empty_pos
+            ))
+
             success = self.game.move(direction)
             if success:
                 self.step_count += 1
-                # 走第一步同时开始计时
                 if self.step_count == 1:
                     self.start_time = time.time()
-                    self.elapsed_timer.start(1000)  # 每 1 秒触发一次 update_time_label
+                    self.elapsed_timer.start(1000)
                     self.lbl_time.setText("time: 00:00")
                 self.lbl_steps.setText(f"steps: {self.step_count}")
+                # 更新最优解对比
+                if self.optimal_steps is not None:
+                    self.lbl_optimal.setText(f"(optimal: {self.optimal_steps})")
+            else:
+                # 移动失败，弹出撤销栈
+                self.undo_stack.pop()
+
             self.load_board()
-            # 检查是否完成
+
             if self.game.is_solved():
                 self.elapsed_timer.stop()
                 self._save_completed_game(source="manual")
-                QMessageBox.information(self, "Victory", "Congratulations! You solved the puzzle!")
+                self._show_victory()
+
+    def _show_victory(self):
+        msg = f"🎉 Congratulations! You solved the puzzle!\n\nSteps: {self.step_count}"
+        if self.optimal_steps is not None:
+            ratio = self.step_count / self.optimal_steps if self.optimal_steps > 0 else 0
+            msg += f"\nOptimal: {self.optimal_steps}\nEfficiency: {ratio:.0%}"
+        QMessageBox.information(self, "Victory", msg)
+
+    # ------------------------------------------------------------------
+    # 撤销
+    # ------------------------------------------------------------------
+
+    def undo_move(self):
+        if not self.undo_stack:
+            return
+        board, empty_pos = self.undo_stack.pop()
+        self.game.board = board
+        self.game.empty_pos = empty_pos
+        self.step_count = max(0, self.step_count - 1)
+        self.lbl_steps.setText(f"steps: {self.step_count}")
+        self.load_board()
+
+    # ------------------------------------------------------------------
+    # 重置棋盘
+    # ------------------------------------------------------------------
+
+    def reset_board(self):
+        if self.session_initial_board is None:
+            return
+        self.game.board = copy.deepcopy(self.session_initial_board)
+        self._set_empty_position_from_board()
+        self._reset_game_view_state()
+
+    # ------------------------------------------------------------------
+    # 求解
+    # ------------------------------------------------------------------
 
     def solve_puzzle(self):
-        """
-        点击 Solve 后：
-        1) 用 A* 求解, 拿到移动方向
-        2) 基于移动方向，生成所有中间状态存进 self.solution_states
-        3) 在文本区域显示步骤
-        4) 启用 “上一/下一步” 按钮
-        """
-        self.solution_moves = self.game.solve()  # A* 返回的移动方向列表
+        self.solution_moves = self.game.solve()
         if not self.solution_moves:
             QMessageBox.information(self, "Solution", "No solution found or already solved.")
             return
+
         self.elapsed_timer.stop()
+        self.optimal_steps = len(self.solution_moves)
+        self.lbl_optimal.setText(f"(optimal: {self.optimal_steps})")
+
         # 生成所有中间状态
-        temp_game = copy.deepcopy(self.game)  # 复制当前游戏
+        temp_game = copy.deepcopy(self.game)
         self.solution_states = []
-        self.solution_states.append(copy.deepcopy(temp_game.board))  # 初始状态
+        self.solution_states.append(copy.deepcopy(temp_game.board))
 
         for mv in self.solution_moves:
             temp_game.move(GameLogic.directions[mv])
             self.solution_states.append(copy.deepcopy(temp_game.board))
 
-        # 在文本区域显示步骤(带序号)
+        # 显示步骤（带方向箭头）
         steps_text = ""
         for i, mv in enumerate(self.solution_moves, start=1):
-            steps_text += f"{i}. {mv}\n"
+            arrow = _DIR_CN.get(mv, mv)
+            steps_text += f"{i:2d}. {arrow}  {mv}\n"
         self.steps_display.setText(steps_text)
 
-        # 重置索引到开头, 并启用按钮
+        # 重置索引
         self.current_step_index = 0
-        self.btn_prev.setEnabled(False)  # 刚开始不能再往前
-        self.btn_next.setEnabled(True)   # 可以往后
-        # 显示当前(第0步)状态
-        self.load_state(self.solution_states[self.current_step_index])
+        self.btn_prev.setEnabled(False)
+        self.btn_next.setEnabled(True)
+        self.btn_play.setEnabled(True)
+        self.load_state(self.solution_states[0])
+
+    # ------------------------------------------------------------------
+    # 回放控制
+    # ------------------------------------------------------------------
 
     def show_previous_step(self):
-        """
-        上一步
-        """
         if self.solution_states is None:
             return
-
         if self.current_step_index > 0:
             self.current_step_index -= 1
-            self.load_state(self.solution_states[self.current_step_index])
+            # 高亮被移动的 tile
+            highlight = self._get_moved_tile_pos(self.current_step_index)
+            self.load_state(self.solution_states[self.current_step_index], highlight_pos=highlight)
             self.btn_next.setEnabled(True)
-
-        # 如果已经到最开头，就禁用 '上一步'
         if self.current_step_index == 0:
             self.btn_prev.setEnabled(False)
 
     def show_next_step(self):
-        """
-        下一步
-        """
         if self.solution_states is None:
             return
-
         if self.current_step_index < len(self.solution_states) - 1:
             self.current_step_index += 1
-            self.load_state(self.solution_states[self.current_step_index])
+            highlight = self._get_moved_tile_pos(self.current_step_index)
+            self.load_state(self.solution_states[self.current_step_index], highlight_pos=highlight)
             self.btn_prev.setEnabled(True)
-
-        # 如果到达最后一步，就禁用 '下一步'
         if self.current_step_index == len(self.solution_states) - 1:
             self.btn_next.setEnabled(False)
 
+    def _get_moved_tile_pos(self, step_index):
+        """获取第 step_index 步被移动的 tile 在新状态中的位置"""
+        if step_index == 0 or self.solution_states is None:
+            return None
+        prev = self.solution_states[step_index - 1]
+        curr = self.solution_states[step_index]
+        size = len(prev)
+        for i in range(size):
+            for j in range(size):
+                if prev[i][j] != curr[i][j] and curr[i][j] != 0:
+                    return (i, j)
+        return None
+
+    def toggle_playback(self):
+        if self.is_playing:
+            self._stop_playback()
+        else:
+            self._start_playback()
+
+    def _start_playback(self):
+        if self.solution_states is None:
+            return
+        # 如果已经在末尾，从头开始
+        if self.current_step_index >= len(self.solution_states) - 1:
+            self.current_step_index = 0
+            self.load_state(self.solution_states[0])
+            self.btn_prev.setEnabled(False)
+            self.btn_next.setEnabled(True)
+        self.is_playing = True
+        self.btn_play.setText("⏸ Pause")
+        self.btn_prev.setEnabled(False)
+        self.btn_next.setEnabled(False)
+        self.playback_timer.start(self.playback_interval)
+
+    def _stop_playback(self):
+        self.is_playing = False
+        self.playback_timer.stop()
+        self.btn_play.setText("▶ Play")
+        # 恢复按钮状态
+        if self.solution_states is not None:
+            self.btn_prev.setEnabled(self.current_step_index > 0)
+            self.btn_next.setEnabled(self.current_step_index < len(self.solution_states) - 1)
+
+    def _playback_step(self):
+        """定时器回调：播放下一步"""
+        if self.solution_states is None:
+            self._stop_playback()
+            return
+        if self.current_step_index >= len(self.solution_states) - 1:
+            self._stop_playback()
+            return
+        self.current_step_index += 1
+        highlight = self._get_moved_tile_pos(self.current_step_index)
+        self.load_state(self.solution_states[self.current_step_index], highlight_pos=highlight)
+
+    def _set_speed(self, ms):
+        self.playback_interval = ms
+        for label, btn in self.speed_buttons.items():
+            btn.setChecked(btn.isChecked() and btn.sender() != btn)
+        # 重置所有按钮样式
+        for btn in self.speed_buttons.values():
+            btn.setChecked(False)
+        # 设置当前按钮
+        for label, m in [("0.5x", 1000), ("1x", 500), ("2x", 250), ("4x", 125)]:
+            if m == ms:
+                self.speed_buttons[label].setChecked(True)
+                break
+        if self.is_playing:
+            self.playback_timer.setInterval(ms)
+
+    # ------------------------------------------------------------------
+    # 导航
+    # ------------------------------------------------------------------
+
     def set_size(self):
-        # 选择棋盘大小
         dialog = SelectSizeDialog()
         if dialog.exec_() == QDialog.Accepted:
             size = dialog.get_selected_size()
-
-            # 更新棋盘逻辑
             self.game.set_size(size)
             self.game.generate_board()
             self._reset_game_view_state()
 
     def go_back(self):
+        self._stop_playback()
         self.stacked_widget.setCurrentIndex(0)
 
     def load_replay_record(self, record):
@@ -289,23 +489,13 @@ class GameWindow(QWidget):
         self._reset_game_view_state()
 
     def customize(self):
-        # 弹出一个自定义对话框
         dialog = CustomizeGameDialog()
         if dialog.exec_() == QDialog.Accepted:
-            # 获取玩家编辑好的布局(二维列表)
             board_2d = dialog.get_custom_layout()
-            # 赋值给 self.game
             self.game.set_size(len(board_2d))
             self.game.board = board_2d
             self._set_empty_position_from_board()
-            # 检查 solvable（如果对话框已经检查过，这里可略过）
             if not self.game.is_solvable():
                 QMessageBox.information(self, "Error", "Puzzle is not solvable.")
             else:
                 self._reset_game_view_state()
-
-    def update_time_label(self):
-        elapsed = int(time.time() - self.start_time)
-        minutes = elapsed // 60
-        seconds = elapsed % 60
-        self.lbl_time.setText(f"time: {minutes:02d}:{seconds:02d}")

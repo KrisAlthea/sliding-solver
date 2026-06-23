@@ -9,7 +9,7 @@
 ### 编译与构建
 
 - C 求解器需手动编译：`gcc -O2 -shared -fPIC -o libsolver.so solver_c.c`
-- 无 `requirements.txt`，依赖 PyQt5 + pytest
+- 依赖：`pip install -r requirements.txt`（PyQt5 + pytest）
 
 ### 运行与本地起服务
 
