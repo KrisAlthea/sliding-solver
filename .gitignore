@@ -2,12 +2,20 @@
 __pycache__/
 *.pyc
 
+# 编译产物
+*.so
+*.o
+*.dylib
+
 # 环境配置文件
 .env
 .vscode/
 
 # PyCharm 项目文件
 .idea/
+
+# 数据文件
+data/
 
 # 操作系统文件
 .DS_Store
